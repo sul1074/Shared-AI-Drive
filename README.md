@@ -168,7 +168,7 @@ DriveEmbeddingScheduler (FOR UPDATE SKIP LOCKED 제어)
 ## 2. 벡터 임베딩 파이프라인과 폴더 임베딩 상태 동기화
 파일이 업로드되면 AI가 읽을 수 있도록 벡터 임베딩하는 백그라운드 병렬 Worker와, 폴더 하위의 파일들의 임베딩 여부 상태에 따른 폴더 임베딩 상태를 동기화하는 로직입니다.
 
-### 2-1. 비관적 락 & SELECT FOR UPDATE SKIP LOCKED 기반의 스케줄링
+### 2-1. SELECT FOR UPDATE SKIP LOCKED 기반의 스케줄링
 메모리 큐를 사용하면 서버 다운 시 작업 내역이 증발합니다. 이를 방지하기 위해 DB 테이블 자체를 안정적인 작업 대기열로 활용하며, `SELECT FOR UPDATE SKIP LOCKED`를 통해 다중 스레드 환경에서의 `Race Condition` 없이 병렬 처리합니다.
 
 **[임베딩 스케줄러 동작 시퀀스 다이어그램]**
@@ -227,7 +227,7 @@ sequenceDiagram
   - 외부 AI 모델(RAG 서버)의 과부하를 막기 위해, `FixedThreadPool`과 `AtomicInteger`를 통해 동시에 실행되는 API 요청 수를 `maxWorkers` 개수로 제한합니다.
   - 메인 클라이언트 요청을 처리하는 Tomcat 스레드와 임베딩 워커 스레드를 분리하여, 임베딩 지연이 일반 사용자의 API 호출 응답성에 영향을 주지 않도록 합니다.
 
-- **SKIP LOCKED를 활용한 분산 동시성 제어 및 락 최적화** 
+- **동시성 제어** 
   - 다중 서버 및 다중 스레드 환경에서 동일한 파일에 중복 접근하는 것을 막기 위해 `SELECT FOR UPDATE SKIP LOCKED` 구문을 사용합니다. 경합이 발생해도 스레드가 대기하지 않고 다른 타겟을 찾습니다.
   - 타겟을 찾으면(선점하면) 상태를 `PROCESSING`으로 변경하고 트랜잭션을 커밋하여 DB 락을 해제합니다.
   - 이를 통해 DB 커넥션을 점유하는 시간을 최소화하며, 타 워커 스레드가 동일한 타겟에 접근하는 것을 막습니다.
@@ -424,7 +424,7 @@ flowchart TD
     DB --> Check
 ```
 
-- **계층 탐색 반복 쿼리(N+1) 방지:** `PermissionQueryRepository.hasInheritedAccess`에서 파싱된 조상들의 ID 리스트(`pathIds`)와 최상위 드라이브 코드(`driveCode`)를 `IN` 절로 전달합니다. 이를 통해 트리의 깊이와 무관하게 **한 번의 쿼리로 상속된 권한을 검증**합니다.
+- **계층 탐색 재귀 쿼리 방지:** `PermissionQueryRepository.hasInheritedAccess`에서 파싱된 조상들의 ID 리스트(`pathIds`)와 최상위 드라이브 코드(`driveCode`)를 `IN` 절로 전달합니다. 이를 통해 트리의 깊이와 무관하게 **한 번의 쿼리로 상속된 권한을 검증**합니다.
 
 - **도메인 분리 및 SRP 준수:** `HierarchyPathResolver` 인터페이스를 도입하여 자원의 타입(`TargetType`)에 따라 폴더(`DriveFolder`)와 파일(`DriveFile`)의 계층 해석 책임을 분리했습니다.
 
